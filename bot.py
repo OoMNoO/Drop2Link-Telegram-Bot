@@ -44,32 +44,43 @@ def is_allowed_user(message: Message):
     return message.from_user.id == ALLOWED_USER_ID
 
 # --- File Extension Filtering ---
-ALLOWED_EXTENSIONS = {'.pdf', '.png', '.jpg', '.jpeg', '.docx'}
+ALLOWED_EXTENSIONS = {'.pdf', '.png', '.jpg', '.jpeg', '.docx', '.mp4', '.mov', '.avi', '.mkv'}
 
 def is_allowed_file(filename: str) -> bool:
     _, ext = os.path.splitext(filename.lower())
     return ext in ALLOWED_EXTENSIONS
 
 # --- Handlers ---
-@dp.message(F.document)
+@dp.message(F.document | F.video)
 async def handle_file(message: Message):
     if not is_allowed_user(message):
-        await message.reply("⛔️ You are not authorized to use this bot.")
+        await message.reply(
+            "⛔️ You are not authorized to use this bot.\n"
+            "If you believe you should have access, contact [@oomnoo](https://t.me/oomnoo).",
+            disable_web_page_preview=True
+        )
         return
 
-    doc = message.document
-    if not is_allowed_file(doc.file_name):
+    file = message.document or message.video
+    file_name = file.file_name if message.document else f"video_{file.file_id}.mp4"
+
+    MAX_FILE_SIZE_BYTES = 200 * 1024 * 1024  # Telegram bot limit
+    if file.file_size > MAX_FILE_SIZE_BYTES:
+        await message.reply("❌ This file is too large. Telegram bots only support files up to 200MB.")
+        return
+
+    if not is_allowed_file(file_name):
         await message.reply("❌ This file type is not allowed.")
         return
 
-    file_path = os.path.join(UPLOAD_FOLDER, doc.file_name)
-    await bot.download(file=doc.file_id, destination=file_path)
+    file_path = os.path.join(UPLOAD_FOLDER, file_name)
+    await bot.download(file=file.file_id, destination=file_path)
     logging.info(f"Uploaded file saved: {file_path}")
 
     expiration = datetime.now() + timedelta(hours=FILE_EXPIRATION_HOURS)
     expiration_str = expiration.strftime("%Y-%m-%d %H:%M:%S")
 
-    link = f"{URL}/files/{doc.file_name}"
+    link = f"{URL}/files/{file_name}"
     await message.reply(
         f"✅ File uploaded!\n📎 [Download]({link})\n🕒 Link expires: `{expiration_str}`"
     )
@@ -105,7 +116,7 @@ async def cmd_start(message: Message):
         "📤 Upload files and get a private download link.\n"
         "🔒 Access to this bot is limited to approved users only.\n\n"
         "📩 Interested in using this bot or need something similar?\n"
-        "Contact [@yourhandle](https://t.me/yourhandle)."
+        "Contact [@oomnoo](https://t.me/oomnoo)."
     )
     await message.answer(text, disable_web_page_preview=True)
 
@@ -115,7 +126,7 @@ async def block_unauthorized(message: Message):
     if not is_allowed_user(message):
         await message.reply(
             "⛔️ You are not authorized to use this bot.\n"
-            "If you believe you should have access, contact [@yourhandle](https://t.me/yourhandle).",
+            "If you believe you should have access, contact [@oomnoo](https://t.me/oomnoo).",
             disable_web_page_preview=True
         )
 
