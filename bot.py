@@ -132,6 +132,32 @@ async def start(message: Message):
     )
     await message.answer(text, disable_web_page_preview=True)
 
+# --- Handle Userbot Responses ---
+@dp.message(F.text.startswith("#upload_done"))
+async def handle_userbot_done(message: Message):
+    try:
+        logging.info(f"upload_done")
+        _, user_id, file_name = message.text.strip().split(" ", 2)
+        link = get_download_link(file_name)
+        await bot.send_message(
+            int(user_id),
+            f"✅ File uploaded successfully!\n📎 [Download]({link})\n🕒 Expires: `{expiration_str()}`"
+        )
+    except Exception as e:
+        logging.error(f"Error parsing userbot upload_done: {e}")
+
+@dp.message(F.text.startswith("#upload_error"))
+async def handle_userbot_error(message: Message):
+    try:
+        logging.info(f"upload_error")
+        _, user_id, error_msg = message.text.strip().split(" ", 2)
+        await bot.send_message(
+            int(user_id),
+            f"❌ Upload failed via userbot.\nReason: `{error_msg}`"
+        )
+    except Exception as e:
+        logging.error(f"Error parsing userbot upload_error: {e}")
+
 # --- Block all other messages from unauthorized users ---
 @dp.message()
 @only_allowed_user
@@ -167,30 +193,6 @@ async def background_tasks():
             logging.error(f"Log monitor error: {e}")
 
         await asyncio.sleep(config.BACKGROUND_TASKS_INTERVAL_SECONDS)
-
-# --- Handle Userbot Responses ---
-@dp.message(F.text.startswith("#upload_done"))
-async def handle_userbot_done(message: Message):
-    try:
-        _, user_id, file_name = message.text.strip().split(" ", 2)
-        link = get_download_link(file_name)
-        await bot.send_message(
-            int(user_id),
-            f"✅ File uploaded successfully!\n📎 [Download]({link})\n🕒 Expires: `{expiration_str()}`"
-        )
-    except Exception as e:
-        logging.error(f"Error parsing userbot upload_done: {e}")
-
-@dp.message(F.text.startswith("#upload_error"))
-async def handle_userbot_error(message: Message):
-    try:
-        _, user_id, error_msg = message.text.strip().split(" ", 2)
-        await bot.send_message(
-            int(user_id),
-            f"❌ Upload failed via userbot.\nReason: `{error_msg}`"
-        )
-    except Exception as e:
-        logging.error(f"Error parsing userbot upload_error: {e}")
 
 # --- Main Entrypoint ---
 async def main():
