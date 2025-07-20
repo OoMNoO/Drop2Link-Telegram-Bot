@@ -27,9 +27,10 @@ os.makedirs(config.UPLOAD_FOLDER, exist_ok=True)
 
 client = TelegramClient("userbot", config.API_ID, config.API_HASH)
 
-# Temporary map of file -> sender
+# Temporary map of media_msg_id -> {user_id, file_name}
 user_context = {}
 
+# --- Handle metadata linking (new) ---
 @client.on(events.NewMessage(from_users=config.BOT_ID))
 async def handle_file(event):
     sender = await event.get_sender()
@@ -49,6 +50,7 @@ async def handle_file(event):
 
     if isinstance(message.media, MessageMediaDocument):
         try:
+            logging.info(f"user_context: {user_context}, {event.reply_to_msg_id}")
             ctx = user_context.pop(event.reply_to_msg_id, None)
             if not ctx:
                 logging.warning("Received file with no matching context.")
@@ -69,7 +71,8 @@ async def handle_file(event):
             logging.error(f"Download failed: {e}")
             if ctx:
                 await client.send_message(config.BOT_ID, f"#upload_error {ctx['user_id']} {str(e)}")
-                
+
+# --- Background log monitoring ---
 async def background_tasks():
     while True:
         try:

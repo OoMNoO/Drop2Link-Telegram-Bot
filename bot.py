@@ -88,14 +88,16 @@ async def handle_file(message: Message):
     else:
         # Large file → send to userbot for handling
         logging.info(f"Forwarding large file to userbot: {file_name} ({file_size} bytes)")
-        await bot.send_message(
+        upload_req_msg = await bot.send_message(
             config.USER_BOT_ID,
-            f"#upload_request\nUserID:{message.from_user.id}\nName:{file_name}\nSize:{get_file_size_mb(file_size):.2f}MB"
+            f"#upload_request\nUserID:{message.from_user.id}\nName:{file_name}\nSize:{get_file_size_mb(file_size):.2f}MB",
+            parse_mode=None  # disable markdown parsing
         )
         await bot.copy_message(
             chat_id=config.USER_BOT_ID,
             from_chat_id=message.chat.id,
-            message_id=message.message_id
+            message_id=message.message_id,
+            reply_to_message_id=upload_req_msg.message_id
         )
         await message.reply("📤 File is large, sending to backup system...\n⏳ Please wait for confirmation.")
 
