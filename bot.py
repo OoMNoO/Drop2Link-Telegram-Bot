@@ -10,45 +10,45 @@ from aiogram.filters import Command, CommandStart
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.client.default import DefaultBotProperties
 
-from config import BOT_TOKEN, ALLOWED_USER_ID, UPLOAD_FOLDER, URL
+import config
+
+# --- Configs ---
+LOG_FILE_PATH = f"{config.LOG_DIR}/bot.log"
+MAX_BOT_UPLOAD_SIZE_MB = 200
 
 # --- Logging Setup ---
-log_dir = "logs"
-os.makedirs(log_dir, exist_ok=True)
+os.makedirs(config.LOG_DIR, exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
-        logging.FileHandler(f"{log_dir}/bot.log"),
+        logging.FileHandler(f"{LOG_FILE_PATH}"),
         logging.StreamHandler()
     ]
 )
 
-# --- Configs ---
-CLEANUP_INTERVAL_SECONDS = 3600
-FILE_EXPIRATION_HOURS = 24
-MAX_LOG_SIZE_MB = 10
-LOG_FILE_PATH = f"{log_dir}/bot.log"
-
 # --- Bot Setup ---
 bot = Bot(
-    token=BOT_TOKEN,
+    token=config.BOT_TOKEN,
     default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
 )
 dp = Dispatcher(storage=MemoryStorage())
 
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(config.UPLOAD_FOLDER, exist_ok=True)
 
 # --- Filters ---
 def is_allowed_user(message: Message):
-    return message.from_user.id == ALLOWED_USER_ID
+    return message.from_user.id == config.ALLOWED_USER_ID
 
-# --- File Extension Filtering ---
-ALLOWED_EXTENSIONS = {'.pdf', '.png', '.jpg', '.jpeg', '.docx', '.mp4', '.mov', '.avi', '.mkv'}
+def get_file_size_mb(size_bytes: int) -> float:
+    return size_bytes / (1024 * 1024)
 
-def is_allowed_file(filename: str) -> bool:
-    _, ext = os.path.splitext(filename.lower())
-    return ext in ALLOWED_EXTENSIONS
+def expiration_str():
+    exp = datetime.now() + timedelta(hours=config.FILE_EXPIRATION_HOURS)
+    return exp.strftime("%Y-%m-%d %H:%M:%S")
+
+def get_download_link(file_name: str) -> str:
+    return f"{config.URL}/files/{file_name}"
 
 # --- Handlers ---
 @dp.message(F.document | F.video)
@@ -62,28 +62,33 @@ async def handle_file(message: Message):
         return
 
     file = message.document or message.video
-    file_name = file.file_name if message.document else f"video_{file.file_id}.mp4"
+    file_name = file.file_name or f"file_{file.file_id}"
+    file_size = file.file_size
 
-    MAX_FILE_SIZE_BYTES = 200 * 1024 * 1024  # Telegram bot limit
-    if file.file_size > MAX_FILE_SIZE_BYTES:
-        await message.reply("❌ This file is too large. Telegram bots only support files up to 200MB.")
-        return
+    if get_file_size_mb(file_size) <= MAX_BOT_UPLOAD_SIZE_MB:
+        # Small file → direct download
+        file_path = os.path.join(config.UPLOAD_FOLDER, file_name)
+        await bot.download(file=file.file_id, destination=file_path)
+        logging.info(f"Uploaded file saved: {file_path}")
 
-    if not is_allowed_file(file_name):
-        await message.reply("❌ This file type is not allowed.")
-        return
-
-    file_path = os.path.join(UPLOAD_FOLDER, file_name)
-    await bot.download(file=file.file_id, destination=file_path)
-    logging.info(f"Uploaded file saved: {file_path}")
-
-    expiration = datetime.now() + timedelta(hours=FILE_EXPIRATION_HOURS)
-    expiration_str = expiration.strftime("%Y-%m-%d %H:%M:%S")
-
-    link = f"{URL}/files/{file_name}"
-    await message.reply(
-        f"✅ File uploaded!\n📎 [Download]({link})\n🕒 Link expires: `{expiration_str}`"
-    )
+        link = get_download_link(file_name)
+        await message.reply(
+            f"✅ File uploaded!\n📎 [Download]({link})\n🕒 Link expires: `{expiration_str()}`"
+        )
+        logging.info(f"Saved file: {file_path}")
+    else:
+        # Large file → send to userbot for handling
+        logging.info(f"Forwarding large file to userbot: {file_name} ({file_size} bytes)")
+        await bot.send_message(
+            config.USER_BOT_ID,
+            f"#upload_request\nUserID:{message.from_user.id}\nName:{file_name}\nSize:{get_file_size_mb(file_size):.2f}MB"
+        )
+        await bot.copy_message(
+            chat_id=config.USER_BOT_ID,
+            from_chat_id=message.chat.id,
+            message_id=message.message_id
+        )
+        await message.reply("📤 File is large, sending to backup system...\n⏳ Please wait for confirmation.")
 
 @dp.message(Command("status"))
 async def status(message: Message):
@@ -91,15 +96,14 @@ async def status(message: Message):
         return
 
     files = [
-        os.path.join(UPLOAD_FOLDER, f)
-        for f in os.listdir(UPLOAD_FOLDER)
-        if os.path.isfile(os.path.join(UPLOAD_FOLDER, f))
+        f for f in os.listdir(config.UPLOAD_FOLDER)
+        if os.path.isfile(os.path.join(config.UPLOAD_FOLDER, f))
     ]
-    total_size = sum(os.path.getsize(f) for f in files)
+    total_size = sum(os.path.getsize(os.path.join(config.UPLOAD_FOLDER, f)) for f in files)
     size_mb = round(total_size / (1024 * 1024), 2)
 
     await message.reply(
-        f"📊 Status:\n📁 {len(files)} files\n💾 {size_mb} MB used\n🧹 Auto-cleaning every {FILE_EXPIRATION_HOURS}h"
+        f"📊 Status:\n📁 {len(files)} files\n💾 {size_mb} MB used\n🧹 Auto-cleaning every {config.FILE_EXPIRATION_HOURS}h"
     )
 
 @dp.message(Command("cleanup"))
@@ -110,7 +114,7 @@ async def manual_cleanup(message: Message):
     await message.reply(f"🧹 Manual cleanup done: {deleted} file(s) deleted.")
 
 @dp.message(CommandStart())
-async def cmd_start(message: Message):
+async def start(message: Message):
     text = (
         "👋 Welcome to *Drop2Link Bot!*\n\n"
         "📤 Upload files and get a private download link.\n"
@@ -134,17 +138,14 @@ async def block_unauthorized(message: Message):
 def cleanup_old_files():
     now = datetime.now()
     deleted = 0
-    for f in os.listdir(UPLOAD_FOLDER):
-        path = os.path.join(UPLOAD_FOLDER, f)
+    for f in os.listdir(config.UPLOAD_FOLDER):
+        path = os.path.join(config.UPLOAD_FOLDER, f)
         if os.path.isfile(path):
             age = now - datetime.fromtimestamp(os.path.getmtime(path))
-            if age > timedelta(hours=FILE_EXPIRATION_HOURS):
-                try:
-                    os.remove(path)
-                    logging.info(f"Deleted file: {f}")
-                    deleted += 1
-                except Exception as e:
-                    logging.error(f"Failed to delete {f}: {e}")
+            if age > timedelta(hours=config.FILE_EXPIRATION_HOURS):
+                os.remove(path)
+                deleted += 1
+                logging.info(f"Deleted expired file: {f}")
     return deleted
 
 # --- Background Task: cleanup & log monitor ---
@@ -156,12 +157,36 @@ async def background_tasks():
 
         try:
             size_mb = os.path.getsize(LOG_FILE_PATH) / (1024 * 1024)
-            if size_mb > MAX_LOG_SIZE_MB:
-                await bot.send_message(ALLOWED_USER_ID, f"⚠️ Log file > {MAX_LOG_SIZE_MB}MB ({size_mb:.2f}MB)")
+            if size_mb > config.MAX_LOG_SIZE_MB:
+                await bot.send_message(config.ALLOWED_USER_ID, f"⚠️ Log file > {config.MAX_LOG_SIZE_MB}MB ({size_mb:.2f}MB)")
         except Exception as e:
             logging.error(f"Log monitor error: {e}")
 
-        await asyncio.sleep(CLEANUP_INTERVAL_SECONDS)
+        await asyncio.sleep(config.BACKGROUND_TASKS_INTERVAL_SECONDS)
+
+# --- Handle Userbot Responses ---
+@dp.message(F.text.startswith("#upload_done"))
+async def handle_userbot_done(message: Message):
+    try:
+        _, user_id, file_name = message.text.strip().split(" ", 2)
+        link = get_download_link(file_name)
+        await bot.send_message(
+            int(user_id),
+            f"✅ File uploaded successfully!\n📎 [Download]({link})\n🕒 Expires: `{expiration_str()}`"
+        )
+    except Exception as e:
+        logging.error(f"Error parsing userbot upload_done: {e}")
+
+@dp.message(F.text.startswith("#upload_error"))
+async def handle_userbot_error(message: Message):
+    try:
+        _, user_id, error_msg = message.text.strip().split(" ", 2)
+        await bot.send_message(
+            int(user_id),
+            f"❌ Upload failed via userbot.\nReason: `{error_msg}`"
+        )
+    except Exception as e:
+        logging.error(f"Error parsing userbot upload_error: {e}")
 
 # --- Main Entrypoint ---
 async def main():

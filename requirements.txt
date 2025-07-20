@@ -1,1 +1,5 @@
+# For bot.py
 aiogram==3.4.1
+
+# For userbot.py
+telethon==1.30.1
