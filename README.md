@@ -1,3 +1,5 @@
+![Drop2Link](./drop2link-banner.png)
+
 # 🗂️ Drop2Link Telegram Bot
 
 **Drop2Link** is a private, lightweight Telegram bot built in Python that allows selected users to **upload files and receive direct download links** — self-hosted, secure, and minimal.
