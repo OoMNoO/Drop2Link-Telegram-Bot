@@ -46,7 +46,7 @@ def only_allowed_user(handler):
         logging.info(f"---------------------------------")
         logging.info(f"message text: {message.text}")
         logging.info(f"---------------------------------")
-        if message.from_user.id != config.ALLOWED_USER_ID:
+        if message.from_user.id != config.ALLOWED_USER_ID and message.from_user.id != config.USER_BOT_ID:
             await message.reply(
                 "⛔️ You are not authorized to use this bot.\n"
                 "If you believe you should have access, contact [@oomnoo](https://t.me/oomnoo).",
