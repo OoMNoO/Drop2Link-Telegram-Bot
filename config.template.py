@@ -1,14 +1,16 @@
-API_ID = 12345678  # Your Telegram API ID
-API_HASH = "your_api_hash"
-ALLOWED_USER_ID = 123456789  # Your Telegram user ID
-BOT_ID = 1234567890  # bot's user ID
-BOT_TOKEN = "Your Bot Token"
-UPLOAD_FOLDER = "./uploads"
-URL = "http://your-server-ip"  # Without trailing slash
-USER_BOT_ID = 1234567890  # Your userbot's Telegram user ID
+BOT_TOKEN = "your_bot_token"
+BOT_ID = 1234567890  # Telegram ID of the bot
+ALLOWED_USER_ID = 123456789  # Your own Telegram user ID
+USER_BOT_ID = 987654321      # Telegram ID of the userbot account
 
-# log configs
+API_ID = 12345678  # Your Telegram API ID from https://my.telegram.org/apps
+API_HASH = "your_api_hash"  # Your Telegram API HASH from https://my.telegram.org/apps
+
+UPLOAD_FOLDER = "./uploads"
+LOG_DIR = "./logs"
+URL = "http://your-server-ip"  # Without trailing slash
+
 MAX_LOG_SIZE_MB = 10
-LOG_DIR = "logs"
+MAX_BOT_UPLOAD_SIZE_MB = 200 # MB
 FILE_EXPIRATION_HOURS = 24
 BACKGROUND_TASKS_INTERVAL_SECONDS = 3600
