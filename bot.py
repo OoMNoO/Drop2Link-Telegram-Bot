@@ -110,7 +110,7 @@ async def status(message: Message):
 async def manual_cleanup(message: Message):
     if not is_allowed_user(message):
         return
-    deleted = cleanup_old_files()
+    deleted = cleanup_files("all")
     await message.reply(f"🧹 Manual cleanup done: {deleted} file(s) deleted.")
 
 @dp.message(CommandStart())
@@ -135,14 +135,14 @@ async def block_unauthorized(message: Message):
         )
 
 # --- Cleanup Function ---
-def cleanup_old_files():
+def cleanup_files(cleanup_mode: str):
     now = datetime.now()
     deleted = 0
     for f in os.listdir(config.UPLOAD_FOLDER):
         path = os.path.join(config.UPLOAD_FOLDER, f)
         if os.path.isfile(path):
             age = now - datetime.fromtimestamp(os.path.getmtime(path))
-            if age > timedelta(hours=config.FILE_EXPIRATION_HOURS):
+            if age > timedelta(hours=config.FILE_EXPIRATION_HOURS) or cleanup_mode == "all":
                 os.remove(path)
                 deleted += 1
                 logging.info(f"Deleted expired file: {f}")
@@ -151,7 +151,7 @@ def cleanup_old_files():
 # --- Background Task: cleanup & log monitor ---
 async def background_tasks():
     while True:
-        deleted = cleanup_old_files()
+        deleted = cleanup_files("old")
         if deleted:
             logging.info(f"🧹 Background cleanup removed {deleted} files")
 
