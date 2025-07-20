@@ -15,7 +15,6 @@ import config
 
 # --- Configs ---
 LOG_FILE_PATH = f"{config.LOG_DIR}/bot.log"
-MAX_BOT_UPLOAD_SIZE_MB = 200
 
 # --- Logging Setup ---
 os.makedirs(config.LOG_DIR, exist_ok=True)
@@ -74,7 +73,7 @@ async def handle_file(message: Message):
     file_name = file.file_name or f"file_{file.file_id}"
     file_size = file.file_size
 
-    if get_file_size_mb(file_size) <= MAX_BOT_UPLOAD_SIZE_MB:
+    if get_file_size_mb(file_size) <= config.MAX_BOT_UPLOAD_SIZE_MB:
         # Small file → direct download
         file_path = os.path.join(config.UPLOAD_FOLDER, file_name)
         await bot.download(file=file.file_id, destination=file_path)
