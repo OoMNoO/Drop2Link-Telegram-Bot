@@ -2,6 +2,7 @@ import os
 import asyncio
 import logging
 from datetime import datetime, timedelta
+from functools import wraps
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, ContentType
@@ -37,8 +38,23 @@ dp = Dispatcher(storage=MemoryStorage())
 os.makedirs(config.UPLOAD_FOLDER, exist_ok=True)
 
 # --- Filters ---
-def is_allowed_user(message: Message):
-    return message.from_user.id == config.ALLOWED_USER_ID
+def only_allowed_user(handler):
+    @wraps(handler)
+    async def wrapper(message: Message, *args, **kwargs):
+        logging.info(f"=================================")
+        logging.info(f"message from: {message.from_user.id} {message.from_user.username}")
+        logging.info(f"---------------------------------")
+        logging.info(f"message text: {message.text}")
+        logging.info(f"---------------------------------")
+        if message.from_user.id != config.ALLOWED_USER_ID:
+            await message.reply(
+                "⛔️ You are not authorized to use this bot.\n"
+                "If you believe you should have access, contact [@oomnoo](https://t.me/oomnoo).",
+                disable_web_page_preview=True
+            )
+            return
+        return await handler(message, *args, **kwargs)
+    return wrapper
 
 def get_file_size_mb(size_bytes: int) -> float:
     return size_bytes / (1024 * 1024)
@@ -52,15 +68,8 @@ def get_download_link(file_name: str) -> str:
 
 # --- Handlers ---
 @dp.message(F.document | F.video)
+@only_allowed_user
 async def handle_file(message: Message):
-    if not is_allowed_user(message):
-        await message.reply(
-            "⛔️ You are not authorized to use this bot.\n"
-            "If you believe you should have access, contact [@oomnoo](https://t.me/oomnoo).",
-            disable_web_page_preview=True
-        )
-        return
-
     file = message.document or message.video
     file_name = file.file_name or f"file_{file.file_id}"
     file_size = file.file_size
@@ -91,10 +100,8 @@ async def handle_file(message: Message):
         await message.reply("📤 File is large, sending to backup system...\n⏳ Please wait for confirmation.")
 
 @dp.message(Command("status"))
+@only_allowed_user
 async def status(message: Message):
-    if not is_allowed_user(message):
-        return
-
     files = [
         f for f in os.listdir(config.UPLOAD_FOLDER)
         if os.path.isfile(os.path.join(config.UPLOAD_FOLDER, f))
@@ -107,9 +114,8 @@ async def status(message: Message):
     )
 
 @dp.message(Command("cleanup"))
+@only_allowed_user
 async def manual_cleanup(message: Message):
-    if not is_allowed_user(message):
-        return
     deleted = cleanup_files("all")
     await message.reply(f"🧹 Manual cleanup done: {deleted} file(s) deleted.")
 
@@ -126,13 +132,9 @@ async def start(message: Message):
 
 # --- Block all other messages from unauthorized users ---
 @dp.message()
+@only_allowed_user
 async def block_unauthorized(message: Message):
-    if not is_allowed_user(message):
-        await message.reply(
-            "⛔️ You are not authorized to use this bot.\n"
-            "If you believe you should have access, contact [@oomnoo](https://t.me/oomnoo).",
-            disable_web_page_preview=True
-        )
+    return
 
 # --- Cleanup Function ---
 def cleanup_files(cleanup_mode: str):
