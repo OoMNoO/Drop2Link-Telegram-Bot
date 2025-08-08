@@ -7,7 +7,7 @@ from functools import wraps
 
 import aiohttp
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, ContentType
+from aiogram.types import Message
 from aiogram.enums import ParseMode
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -26,6 +26,7 @@ aiohttp.TCPConnector = IPv4OnlyConnector
 
 # --- Configs ---
 LOG_FILE_PATH = f"{config.LOG_DIR}/bot.log"
+CLEANUP_RUNNING = False
 
 # --- Logging Setup ---
 os.makedirs(config.LOG_DIR, exist_ok=True)
@@ -89,12 +90,10 @@ async def handle_file(message: Message):
         file_path = os.path.join(config.UPLOAD_FOLDER, file_name)
         await bot.download(file=file.file_id, destination=file_path)
         logging.info(f"Uploaded file saved: {file_path}")
-
         link = get_download_link(file_name)
         await message.reply(
             f"✅ File uploaded!\n📎 [Download]({link})\n🕒 Link expires: `{expiration_str()}`"
         )
-        logging.info(f"Saved file: {file_path}")
     else:
         # Large file → send to userbot for handling
         logging.info(f"Forwarding large file to userbot: {file_name} ({file_size} bytes)")
@@ -128,8 +127,11 @@ async def status(message: Message):
 @dp.message(Command("cleanup"))
 @only_allowed_user
 async def manual_cleanup(message: Message):
-    deleted = cleanup_files("all")
-    await message.reply(f"🧹 Manual cleanup done: {deleted} file(s) deleted.")
+    user_id = message.from_user.id
+    await bot.send_message(user_id, "🧹 Starting cleanup... ⏳")
+    progress_message = await bot.send_message(user_id, "🧹 Cleaning up: -/- processed, 0 deleted.")
+    deleted, total = await cleanup_files("all", user_id, progress_message)
+    await message.reply(f"🧹 Manual cleanup done: {deleted}/{total} file(s) deleted. ✅")
 
 @dp.message(CommandStart())
 async def start(message: Message):
@@ -175,25 +177,64 @@ async def block_unauthorized(message: Message):
     return
 
 # --- Cleanup Function ---
-def cleanup_files(cleanup_mode: str):
+async def cleanup_files(cleanup_mode: str, user_id=None, progress_message: Message = None):
+    global CLEANUP_RUNNING
+    if CLEANUP_RUNNING:
+        logging.info("Cleanup skipped — already in progress.")
+        if user_id:
+            await bot.send_message(user_id, "⚠️ Cleanup is already in progress.")
+        return 0
+    CLEANUP_RUNNING = True
+    
     now = datetime.now()
     deleted = 0
-    for f in os.listdir(config.UPLOAD_FOLDER):
-        path = os.path.join(config.UPLOAD_FOLDER, f)
-        if os.path.isfile(path):
+    total_files = 0
+    
+    try:
+        now = datetime.now()
+        files = [f for f in os.listdir(config.UPLOAD_FOLDER) if os.path.isfile(os.path.join(config.UPLOAD_FOLDER, f))]
+        total_files = len(files)
+        if progress_message:
+            try:
+                await progress_message.edit_text(f"🧹 Cleaning up: 0/{total_files} processed, 0 deleted.")
+            except:
+                pass
+        else:
+            logging.info(f"🧹 Cleaning up: 0/{total_files} processed, 0 deleted.")
+
+        for i, f in enumerate(files, start=1):
+            path = os.path.join(config.UPLOAD_FOLDER, f)
             age = now - datetime.fromtimestamp(os.path.getmtime(path))
             if age > timedelta(hours=config.FILE_EXPIRATION_HOURS) or cleanup_mode == "all":
                 os.remove(path)
                 deleted += 1
                 logging.info(f"Deleted expired file: {f}")
-    return deleted
+                if progress_message:
+                    try:
+                        await progress_message.edit_text(f"🧹 Cleaning up: {i}/{total_files} processed, file {f} deleted.")
+                    except:
+                        pass
+                else:
+                    logging.info(f"🧹 Cleaning up: {i}/{total_files} processed, file {f} deleted.")
+            await asyncio.sleep(0)  # yield control
+    except Exception as e:
+        logging.error(f"Cleanup error: {e}")
+        if user_id:
+            await bot.send_message(user_id, f"❌ Cleanup failed")
+        deleted = deleted if deleted != 0 else -1
+        total_files = total_files if total_files != 0 else -1
+    finally:
+        CLEANUP_RUNNING = False
+    return deleted, total_files
 
-# --- Background Task: cleanup & log monitor ---
+# --- Background Task ---
 async def background_tasks():
     while True:
-        deleted = cleanup_files("old")
-        if deleted:
-            logging.info(f"🧹 Background cleanup removed {deleted} files")
+        logging.info("📝 Starting Background Tasks ⏳")
+        logging.info("🧹 Starting Background cleanup... ⏳")
+        logging.info("🧹 Cleaning up: -/- processed, 0 deleted.")
+        deleted, total = await cleanup_files("old")
+        logging.info(f"🧹 Background cleanup done: {deleted}/{total} file(s) deleted. ✅")
 
         try:
             size_mb = os.path.getsize(LOG_FILE_PATH) / (1024 * 1024)
@@ -201,6 +242,8 @@ async def background_tasks():
                 await bot.send_message(config.ALLOWED_USER_ID, f"⚠️ Log file > {config.MAX_LOG_SIZE_MB}MB ({size_mb:.2f}MB)")
         except Exception as e:
             logging.error(f"Log monitor error: {e}")
+        
+        logging.info("📝 Background Tasks done. ✅")
 
         await asyncio.sleep(config.BACKGROUND_TASKS_INTERVAL_SECONDS)
 
