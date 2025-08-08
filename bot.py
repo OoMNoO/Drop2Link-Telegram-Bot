@@ -178,6 +178,39 @@ async def list_files(message: Message):
         logging.error(f"Error listing files, error: {e}")
         await message.reply("❌ Error listing files.")
 
+@dp.message(Command("links"))
+@only_allowed_user
+async def list_links(message: Message):
+    try:
+        if not os.path.exists(config.UPLOAD_FOLDER):
+            await message.reply("⚠️ Upload folder not found.")
+            return
+
+        files = os.listdir(config.UPLOAD_FOLDER)
+        if not files:
+            await message.reply("🔗 No links found.")
+            return
+
+        # Build file list with sizes
+        links_list = []
+        for f in files:
+            full_path = os.path.join(config.UPLOAD_FOLDER, f)
+            if os.path.isfile(full_path):
+                file_name = full_path.rsplit("/", 1)[-1]
+                # Generate download link
+                link = get_download_link(file_name)
+                links_list.append(link)
+
+        # Send result
+        await message.reply(
+            "\n".join(links_list[:50]) if links_list else "🔗 No links found.",
+            parse_mode=None  # disable markdown parsing
+        )
+        # If too many files, we can paginate or limit
+    except Exception as e:
+        logging.error(f"Error listing files, error: {e}")
+        await message.reply("❌ Error listing files.")
+
 @dp.message(CommandStart())
 async def start(message: Message):
     text = (
