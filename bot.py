@@ -140,10 +140,15 @@ async def status(message: Message):
 @only_allowed_user
 async def manual_cleanup(message: Message):
     user_id = message.from_user.id
-    await bot.send_message(user_id, "🧹 Starting cleanup... ⏳")
-    progress_message = await bot.send_message(user_id, "🧹 Cleaning up: -/- processed, 0 deleted.")
+    progress_message = await message.reply("🧹 Starting cleanup... ⏳")
+    await asyncio.sleep(0.5)
+    await progress_message.edit_text("🧹 Cleaning up:\n-/- processed\n 0 file deleted.")
+    await asyncio.sleep(0.5)
     deleted, total = await cleanup_files("all", user_id, progress_message)
-    await message.reply(f"🧹 Manual cleanup done: {deleted}/{total} file(s) deleted. ✅")
+    if deleted == -2 or total == -2:
+        await progress_message.edit_text("⚠️ Cleanup is already in progress.")
+    else:
+        await progress_message.edit_text(f"🧹 Manual cleanup done ✅\n{deleted}/{total} file(s) deleted.")
 
 @dp.message(Command("files"))
 @only_allowed_user
@@ -259,9 +264,7 @@ async def cleanup_files(cleanup_mode: str, user_id=None, progress_message: Messa
     global CLEANUP_RUNNING
     if CLEANUP_RUNNING:
         logging.info("Cleanup skipped — already in progress.")
-        if user_id:
-            await bot.send_message(user_id, "⚠️ Cleanup is already in progress.")
-        return 0
+        return -2, -2
     CLEANUP_RUNNING = True
     
     now = datetime.now()
@@ -274,7 +277,8 @@ async def cleanup_files(cleanup_mode: str, user_id=None, progress_message: Messa
         total_files = len(files)
         if progress_message:
             try:
-                await progress_message.edit_text(f"🧹 Cleaning up: 0/{total_files} processed, 0 deleted.")
+                await progress_message.edit_text(f"🧹 Cleaning up:\n0/{total_files} processed\n0 file deleted.")
+                await asyncio.sleep(0.5)
             except:
                 pass
         else:
@@ -289,12 +293,15 @@ async def cleanup_files(cleanup_mode: str, user_id=None, progress_message: Messa
                 logging.info(f"Deleted expired file: {f}")
                 if progress_message:
                     try:
-                        await progress_message.edit_text(f"🧹 Cleaning up: {i}/{total_files} processed, file {f} deleted.")
-                    except:
-                        pass
+                        await progress_message.edit_text(
+                            f"🧹 Cleaning up:\n{i}/{total_files} processed\n{f} deleted.",
+                         parse_mode=None  # disable markdown parsing
+                        )
+                    except Exception as e:
+                        logging.error(f"Failed to edit progress message: {e}")
                 else:
                     logging.info(f"🧹 Cleaning up: {i}/{total_files} processed, file {f} deleted.")
-            await asyncio.sleep(0)  # yield control
+            await asyncio.sleep(0.5)  # yield control
     except Exception as e:
         logging.error(f"Cleanup error: {e}")
         if user_id:
