@@ -1,9 +1,11 @@
 import os
 import asyncio
 import logging
+import socket
 from datetime import datetime, timedelta
 from functools import wraps
 
+import aiohttp
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, ContentType
 from aiogram.enums import ParseMode
@@ -12,6 +14,15 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.client.default import DefaultBotProperties
 
 import config
+
+# Monkey patch TCPConnector to force IPv4
+_original_tcp_connector = aiohttp.TCPConnector
+
+def IPv4OnlyConnector(*args, **kwargs):
+    kwargs["family"] = socket.AF_INET
+    return _original_tcp_connector(*args, **kwargs)
+
+aiohttp.TCPConnector = IPv4OnlyConnector
 
 # --- Configs ---
 LOG_FILE_PATH = f"{config.LOG_DIR}/bot.log"
