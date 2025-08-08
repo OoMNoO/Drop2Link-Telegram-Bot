@@ -14,6 +14,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.client.default import DefaultBotProperties
 
 import config
+from fileicons import FILE_ICONS
 
 # Monkey patch TCPConnector to force IPv4
 _original_tcp_connector = aiohttp.TCPConnector
@@ -77,6 +78,10 @@ def expiration_str():
 def get_download_link(file_name: str) -> str:
     return f"{config.URL}/files/{file_name}"
 
+def get_file_icon(filename: str) -> str:
+    ext = os.path.splitext(filename)[1].lower()
+    return FILE_ICONS.get(ext, '📄')
+
 # --- Handlers ---
 @dp.message(F.document | F.video)
 @only_allowed_user
@@ -139,6 +144,39 @@ async def manual_cleanup(message: Message):
     progress_message = await bot.send_message(user_id, "🧹 Cleaning up: -/- processed, 0 deleted.")
     deleted, total = await cleanup_files("all", user_id, progress_message)
     await message.reply(f"🧹 Manual cleanup done: {deleted}/{total} file(s) deleted. ✅")
+
+@dp.message(Command("files"))
+@only_allowed_user
+async def list_files(message: Message):
+    try:
+        if not os.path.exists(config.UPLOAD_FOLDER):
+            await message.reply("⚠️ Upload folder not found.")
+            return
+
+        files = os.listdir(config.UPLOAD_FOLDER)
+        if not files:
+            await message.reply("📂 No files found.")
+            return
+
+        # Build file list with sizes
+        file_list = []
+        for f in files:
+            full_path = os.path.join(config.UPLOAD_FOLDER, f)
+            if os.path.isfile(full_path):
+                size = os.path.getsize(full_path)
+                size_mb = round(size / (1024 * 1024), 2)
+                icon = get_file_icon(f)
+                file_list.append(f"{icon} {f} — {size_mb} MB")
+
+        # Send result
+        await message.reply(
+            "\n".join(file_list[:50]) if file_list else "📂 No files found.",
+            parse_mode=None  # disable markdown parsing
+        )
+        # If too many files, we can paginate or limit
+    except Exception as e:
+        logging.error(f"Error listing files, error: {e}")
+        await message.reply("❌ Error listing files.")
 
 @dp.message(CommandStart())
 async def start(message: Message):
