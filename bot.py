@@ -120,8 +120,15 @@ async def status(message: Message):
     total_size = sum(os.path.getsize(os.path.join(config.UPLOAD_FOLDER, f)) for f in files)
     size_mb = round(total_size / (1024 * 1024), 2)
 
+    stat = os.statvfs(config.UPLOAD_FOLDER)
+    free_space_mb = round((stat.f_bavail * stat.f_frsize) / (1024 * 1024), 2)
+
     await message.reply(
-        f"📊 Status:\n📁 {len(files)} files\n💾 {size_mb} MB used\n🧹 Auto-cleaning every {config.FILE_EXPIRATION_HOURS}h"
+        f"📊 Status:\n"
+        f"📁 {len(files)} files\n"
+        f"💾 {size_mb} MB used\n"
+        f"📦 {free_space_mb} MB free\n"
+        f"🧹 Auto-cleaning every {config.FILE_EXPIRATION_HOURS}h"
     )
 
 @dp.message(Command("cleanup"))
