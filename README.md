@@ -108,7 +108,7 @@ To serve files over HTTP:
 1. Create a symlink if your upload folder is outside `/var/www/`:
 
    ```bash
-   sudo ln -s /path/to/uploads /var/www/html/uploads
+   sudo ln -s /path/to/uploads /var/www/drop2link_bot/uploads
    ```
 
 2. Sample Nginx config:
@@ -116,10 +116,10 @@ To serve files over HTTP:
    ```nginx
    server {
        listen 80;
-       server_name your-server-ip;
+       server_name _;
 
        location /files/ {
-           alias /path/to/uploads/;
+           alias /var/www/drop2link_bot/uploads/;
            autoindex off;
            add_header Content-Disposition "attachment";
        }

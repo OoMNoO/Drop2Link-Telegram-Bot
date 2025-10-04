@@ -29,6 +29,10 @@ aiohttp.TCPConnector = IPv4OnlyConnector
 LOG_FILE_PATH = f"{config.LOG_DIR}/bot.log"
 CLEANUP_RUNNING = False
 
+# --- Progress message tracking ---
+# key: (user_id, filename), value: aiogram Message object
+progress_messages = {}
+
 # --- Logging Setup ---
 os.makedirs(config.LOG_DIR, exist_ok=True)
 logging.basicConfig(
@@ -113,7 +117,8 @@ async def handle_file(message: Message):
             message_id=message.message_id,
             reply_to_message_id=upload_req_msg.message_id
         )
-        await message.reply("📤 File is large, sending to backup system...\n⏳ Please wait for confirmation.")
+        progress_msg = await message.reply("📤 File is large, sending to backup system...\n⏳ Please wait for confirmation.")
+        progress_messages[(message.from_user.id, file_name)] = progress_msg
 
 @dp.message(Command("status"))
 @only_allowed_user
@@ -228,28 +233,84 @@ async def start(message: Message):
     await message.answer(text, disable_web_page_preview=True)
 
 # --- Handle Userbot Responses ---
+@dp.message(F.text.startswith("#upload_progress"))
+async def handle_upload_progress(message: Message):
+    try:
+        # Format: #upload_progress user_id file_name percent mb_done mb_total
+        parts = message.text.strip().split(" ", 6)
+        if len(parts) < 6:
+            return
+        _, user_id_str, file_name, percent_str, mb_done_str, mb_total_str = parts
+        user_id = int(user_id_str)
+        percent = int(percent_str)
+        mb_done = float(mb_done_str)
+        mb_total = float(mb_total_str)
+
+        key = (user_id, file_name)
+        progress_msg = progress_messages.get(key)
+        if not progress_msg:
+            return  # no message to edit
+
+        new_text = (
+            f"📤 Uploading *{file_name}*\n"
+            f"Progress: {percent}% ({mb_done:.2f} MB / {mb_total:.2f} MB)\n"
+            "⏳ Please wait..."
+        )
+        # Edit the saved message (ignore MessageNotModified errors)
+        try:
+            await progress_msg.edit_text(new_text)
+        except Exception as e:
+            logging.debug(f"Edit message failed: {e}")
+    except Exception as e:
+        logging.error(f"Error handling upload progress: {e}")
+
 @dp.message(F.text.startswith("#upload_done"))
 async def handle_userbot_done(message: Message):
     try:
-        logging.info(f"upload_done")
-        _, user_id, file_name = message.text.strip().split(" ", 2)
+        _, user_id_str, file_name = message.text.strip().split(" ", 2)
+        user_id = int(user_id_str)
         link = get_download_link(file_name)
-        await bot.send_message(
-            int(user_id),
-            f"✅ File uploaded successfully!\n📎 [Download]({link})\n🕒 Expires: `{expiration_str()}`"
+
+        key = (user_id, file_name)
+        progress_msg = progress_messages.pop(key, None)
+        final_text = (
+            f"✅ Upload complete!\n"
+            f"📎 [Download {file_name}]({link})\n"
+            f"🕒 Link expires: `{expiration_str()}`"
         )
+        if progress_msg:
+            try:
+                await progress_msg.edit_text(final_text)
+            except Exception:
+                # fallback: just send a new message
+                await bot.send_message(user_id, final_text)
+        else:
+            await bot.send_message(user_id, final_text)
     except Exception as e:
         logging.error(f"Error parsing userbot upload_done: {e}")
 
 @dp.message(F.text.startswith("#upload_error"))
 async def handle_userbot_error(message: Message):
     try:
-        logging.info(f"upload_error")
-        _, user_id, error_msg = message.text.strip().split(" ", 2)
-        await bot.send_message(
-            int(user_id),
-            f"❌ Upload failed via userbot.\nReason: `{error_msg}`"
-        )
+        _, user_id_str, error_msg = message.text.strip().split(" ", 2)
+        user_id = int(user_id_str)
+
+        # Find any progress message for this user to edit:
+        keys_to_remove = []
+        for key in progress_messages.keys():
+            if key[0] == user_id:
+                keys_to_remove.append(key)
+
+        for key in keys_to_remove:
+            progress_msg = progress_messages.pop(key, None)
+            if progress_msg:
+                try:
+                    await progress_msg.edit_text(f"❌ Upload failed.\nReason: `{error_msg}`")
+                except Exception:
+                    await bot.send_message(user_id, f"❌ Upload failed.\nReason: `{error_msg}`")
+                return
+        # If no progress message found, just send a new message:
+        await bot.send_message(user_id, f"❌ Upload failed.\nReason: `{error_msg}`")
     except Exception as e:
         logging.error(f"Error parsing userbot upload_error: {e}")
 
